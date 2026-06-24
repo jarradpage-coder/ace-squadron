@@ -21,6 +21,10 @@ export class Sfx {
     this.master = this.ctx.createGain()
     this.master.gain.value = 0.35
     this.master.connect(this.ctx.destination)
+    // iOS suspends the context when the PWA is backgrounded/locked — resume on return.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.ctx && this.ctx.state === 'suspended') void this.ctx.resume()
+    })
   }
 
   private blip(f0: number, f1: number, dur: number, vol: number, kind: Wave = 'square'): void {
@@ -85,9 +89,11 @@ export class Sfx {
   private static LEAD = [0, 330, 0, 440, 0, 294, 0, 392, 0, 330, 0, 440, 0, 392, 0, 523]
 
   startMusic(): void {
+    if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume()
     if (!this.ctx || this.musicTimer) return
     this.step = 0
     this.musicTimer = window.setInterval(() => {
+      if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume()
       const i = this.step % 16
       const b = Sfx.BASS[i]
       const l = Sfx.LEAD[i]

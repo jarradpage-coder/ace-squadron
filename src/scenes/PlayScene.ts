@@ -23,7 +23,9 @@ import { STAGE1, BOSS_AT } from '../data/waves'
 import type { WaveEvent } from '../types'
 
 interface Formation {
-  alive: number
+  count: number
+  killed: number
+  escaped: number
   reds: boolean
   lastX: number
   lastY: number
@@ -114,6 +116,8 @@ export class PlayScene extends Phaser.Scene {
     }
 
     // Pools
+    // runChildUpdate drives each pooled sprite's preUpdate (movement + culling)
+    // every frame. Required — removing it freezes enemies at their spawn points.
     this.playerBullets = this.physics.add.group({ classType: Bullet, maxSize: 64, runChildUpdate: true })
     this.enemyBullets = this.physics.add.group({ classType: Bullet, maxSize: 200, runChildUpdate: true })
     this.enemies = this.physics.add.group({ classType: Enemy, maxSize: 64, runChildUpdate: true })
@@ -150,11 +154,15 @@ export class PlayScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setDepth(1000)
       .setInteractive({ useHandCursor: true })
-    this.muteText.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      p.event.stopPropagation()
-      const muted = this.sfx.toggleMute()
-      this.muteText.setColor(muted ? '#5f6e7a' : '#7fd0ff')
-    })
+    this.muteText.setColor(this.sfx.muted ? '#5f6e7a' : '#7fd0ff')
+    this.muteText.on(
+      'pointerdown',
+      (_p: Phaser.Input.Pointer, _x: number, _y: number, evt: Phaser.Types.Input.EventData) => {
+        evt.stopPropagation() // cancels Phaser's scene-level pointerdown so the ship doesn't drag
+        const muted = this.sfx.toggleMute()
+        this.muteText.setColor(muted ? '#5f6e7a' : '#7fd0ff')
+      }
+    )
 
     this.loopBtn = this.add
       .circle(GAME_W - 58, GAME_H - 76, LOOP_BTN_R, 0xffffff, 0.1)
@@ -205,6 +213,7 @@ export class PlayScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-SPACE', () => this.doLoop())
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (this.overMuteButton(p)) return
       if (this.overLoopButton(p)) {
         this.doLoop()
         return
@@ -222,6 +231,10 @@ export class PlayScene extends Phaser.Scene {
 
   private overLoopButton(p: Phaser.Input.Pointer): boolean {
     return Phaser.Math.Distance.Between(p.x, p.y, this.loopBtn.x, this.loopBtn.y) <= LOOP_BTN_R + 8
+  }
+
+  private overMuteButton(p: Phaser.Input.Pointer): boolean {
+    return this.muteText.getBounds().contains(p.x, p.y)
   }
 
   private aimAt(p: Phaser.Input.Pointer) {
@@ -287,6 +300,16 @@ export class PlayScene extends Phaser.Scene {
   }
 
   enemyEscaped(e: Enemy) {
+    // Keep formation bookkeeping accurate so the map never leaks; an escaped
+    // enemy means the formation wasn't fully cleared, so no power-up.
+    const fid = e.formationId
+    if (fid >= 0) {
+      const f = this.formations.get(fid)
+      if (f) {
+        f.escaped++
+        if (f.killed + f.escaped >= f.count) this.formations.delete(fid)
+      }
+    }
     e.disableBody(true, true)
   }
 
@@ -305,13 +328,12 @@ export class PlayScene extends Phaser.Scene {
     if (fid >= 0) {
       const f = this.formations.get(fid)
       if (f) {
-        f.alive--
+        f.killed++
         f.lastX = enemy.x
         f.lastY = enemy.y
-        if (f.alive <= 0 && f.reds) {
-          this.spawnPowerup(f.lastX, f.lastY)
-          this.formations.delete(fid)
-        }
+        // Clearing the whole red formation by shooting drops the power-up.
+        if (f.reds && f.killed >= f.count) this.spawnPowerup(f.lastX, f.lastY)
+        if (f.killed + f.escaped >= f.count) this.formations.delete(fid)
       }
     }
     enemy.disableBody(true, true)
@@ -341,6 +363,7 @@ export class PlayScene extends Phaser.Scene {
 
   private enemyTouchesPlayer(enemy: Enemy) {
     if (!enemy.active) return
+    if (this.time.now < this.invulnUntil) return // phase through while looping/respawning, like bullets
     this.explode(enemy.x, enemy.y, 0xe24b4a)
     enemy.disableBody(true, true)
     this.hurtPlayer()
@@ -489,6 +512,8 @@ export class PlayScene extends Phaser.Scene {
       this.player.setVisible(false)
       this.wingLeft.setVisible(false)
       this.wingRight.setVisible(false)
+      this.boss?.setVisible(false)
+      this.bossBar.clear()
     }
     this.time.delayedCall(win ? 1300 : 700, () => this.scene.start('over', { score: this.score, win }))
   }
@@ -496,7 +521,8 @@ export class PlayScene extends Phaser.Scene {
   // ---- Wave director -----------------------------------------------------
   private spawnWave(w: WaveEvent) {
     const fid = this.formationCounter++
-    if (w.reds) this.formations.set(fid, { alive: w.count, reds: true, lastX: GAME_W / 2, lastY: 120 })
+    if (w.reds)
+      this.formations.set(fid, { count: w.count, killed: 0, escaped: 0, reds: true, lastX: GAME_W / 2, lastY: 120 })
     const texture = w.reds ? 'enemy' : 'enemyGrey'
     const score = SCORE_ENEMY * w.hp
     const spread = Math.min(GAME_W - 80, w.count * 52)
@@ -528,10 +554,7 @@ export class PlayScene extends Phaser.Scene {
       if (r.y > GAME_H + 4) r.y -= GAME_H + 120
     }
 
-    if (this.gameOver) {
-      this.updateBoss(time, dt)
-      return
-    }
+    if (this.gameOver) return
 
     // keyboard nudge (desktop testing)
     if (this.cursors.left.isDown) this.targetX = Phaser.Math.Clamp(this.targetX - 360 * dt, 16, GAME_W - 16)
