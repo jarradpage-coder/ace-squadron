@@ -39,6 +39,7 @@ export class PowerUp extends Phaser.Physics.Arcade.Sprite {
     this.enableBody(true, x, y, true, true)
     this.setVelocity(Phaser.Math.Between(-15, 15), 60)
     this.applyType()
+    this.label.setPosition(x, y)
     this.label.setVisible(true)
   }
 

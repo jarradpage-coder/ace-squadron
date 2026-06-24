@@ -58,6 +58,7 @@ export class PlayScene extends Phaser.Scene {
   private bossNextFire = 0
   private bossSpawned = false
   private bossFireMul = 1
+  private bossColliders: Phaser.Physics.Arcade.Collider[] = []
 
   private waves: Phaser.GameObjects.Rectangle[] = []
   private formations = new Map<number, Formation>()
@@ -113,6 +114,7 @@ export class PlayScene extends Phaser.Scene {
     this.nextFireAt = 0
     this.formationCounter = 0
     this.stageClearing = false
+    this.bossColliders = []
     this.dragId = -1
     this.targetX = GAME_W / 2
     this.targetY = GAME_H - 150
@@ -123,7 +125,7 @@ export class PlayScene extends Phaser.Scene {
     }
 
     // Pools (runChildUpdate drives each pooled sprite's preUpdate — required).
-    this.playerBullets = this.physics.add.group({ classType: Bullet, maxSize: 80, runChildUpdate: true })
+    this.playerBullets = this.physics.add.group({ classType: Bullet, maxSize: 96, runChildUpdate: true })
     this.enemyBullets = this.physics.add.group({ classType: Bullet, maxSize: 220, runChildUpdate: true })
     this.enemies = this.physics.add.group({ classType: Enemy, maxSize: 64, runChildUpdate: true })
     this.powerups = this.physics.add.group({ classType: PowerUp, maxSize: 8, runChildUpdate: true })
@@ -161,6 +163,7 @@ export class PlayScene extends Phaser.Scene {
     this.startTime = this.time.now
     this.bossSpawned = false
     this.bossPhase = 1
+    this.removeBossColliders()
     this.boss = undefined
     this.bossBar.clear()
     this.disarmUntil = 0
@@ -393,10 +396,10 @@ export class PlayScene extends Phaser.Scene {
     if (enemy.damage(1)) this.killEnemy(enemy)
   }
 
-  private killEnemy(enemy: Enemy) {
+  // Score + red-formation bookkeeping for a killed enemy (shared by normal kills
+  // and the smart bomb, so neither path can desync formation tracking).
+  private creditKill(enemy: Enemy) {
     this.score += enemy.score
-    this.explode(enemy.x, enemy.y, 0xe24b4a)
-    this.sfx.explosion()
     const fid = enemy.formationId
     if (fid >= 0) {
       const f = this.formations.get(fid)
@@ -408,6 +411,12 @@ export class PlayScene extends Phaser.Scene {
         if (f.killed + f.escaped >= f.count) this.formations.delete(fid)
       }
     }
+  }
+
+  private killEnemy(enemy: Enemy) {
+    this.creditKill(enemy)
+    this.explode(enemy.x, enemy.y, 0xe24b4a)
+    this.sfx.explosion()
     enemy.disableBody(true, true)
     this.updateHud()
   }
@@ -455,11 +464,15 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private smartBomb() {
+    let shown = 0
     for (const o of this.enemies.getChildren()) {
       const e = o as Enemy
       if (e.active) {
-        this.score += e.score
-        this.explode(e.x, e.y, 0xffb347)
+        this.creditKill(e) // proper score + red-formation POW bookkeeping
+        if (shown < 12) {
+          this.explode(e.x, e.y, 0xffb347) // cap explosion churn on a full screen
+          shown++
+        }
         e.disableBody(true, true)
       }
     }
@@ -468,7 +481,17 @@ export class PlayScene extends Phaser.Scene {
       if (b.active) b.disableBody(true, true)
     }
     this.cameras.main.flash(200, 255, 255, 255)
-    this.sfx.bossDie()
+    this.sfx.explosion()
+    // A bomb also takes a chunk out of the boss — the fight that matters.
+    if (this.boss) {
+      this.bossHp -= Math.ceil(this.bossMaxHp * 0.15)
+      if (this.bossPhase === 1 && this.bossHp <= this.bossMaxHp * 0.5) {
+        this.bossPhase = 2
+        this.flash('FULL POWER!')
+      }
+      if (this.bossHp <= 0) this.killBoss()
+    }
+    this.updateHud()
   }
 
   private enemyTouchesPlayer(enemy: Enemy) {
@@ -518,9 +541,16 @@ export class PlayScene extends Phaser.Scene {
     ;(boss.body as Phaser.Physics.Arcade.Body).setSize(boss.width * 0.8, boss.height * 0.7, true)
     this.boss = boss
     this.tweens.add({ targets: boss, y: 130, duration: 1500, ease: 'Sine.easeOut' })
-    this.physics.add.overlap(this.playerBullets, boss, (b) => this.bulletHitBoss(b as unknown as Bullet))
-    this.physics.add.overlap(this.player, boss, () => this.hurtPlayer())
+    this.bossColliders = [
+      this.physics.add.overlap(this.playerBullets, boss, (b) => this.bulletHitBoss(b as unknown as Bullet)),
+      this.physics.add.overlap(this.player, boss, () => this.hurtPlayer())
+    ]
     this.flash('WARNING: BOMBER')
+  }
+
+  private removeBossColliders() {
+    this.bossColliders.forEach((c) => this.physics.world.removeCollider(c))
+    this.bossColliders = []
   }
 
   private bulletHitBoss(bullet: Bullet) {
@@ -548,6 +578,7 @@ export class PlayScene extends Phaser.Scene {
       )
     }
     this.cameras.main.shake(500, 0.02)
+    this.removeBossColliders()
     this.boss.destroy()
     this.boss = undefined
     this.bossBar.clear()
@@ -567,6 +598,7 @@ export class PlayScene extends Phaser.Scene {
     }
     this.stageClearing = true
     this.time.delayedCall(1900, () => {
+      if (this.gameOver) return
       this.loops = LOOPS_PER_LIFE
       this.stageClearing = false
       this.startStage(this.stage + 1)
