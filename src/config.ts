@@ -16,6 +16,13 @@ export const SCORE_ENEMY = 100
 export const SCORE_POWERUP = 250
 export const SCORE_BOSS = 5000
 
+export const WEAPON_MAX = 2 // 0 = double, 1 = quad, 2 = six-shot
+export const MAX_LOOPS = 5
+export const POW_CYCLE_MS = 700 // how fast the POW token cycles colour/type
+export const DISARM_MS = 5000
+export const LOOP_BONUS = 1000 // per unused loop, banked at stage clear
+export const STAGE_COUNT = 3
+
 export const HISCORE_KEY = 'aceSquadron.hiscore.v1'
 
 export function loadHiScore(): number {

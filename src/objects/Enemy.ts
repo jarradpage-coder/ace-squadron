@@ -9,6 +9,8 @@ export interface EnemyOpts {
   texture: string
   formationId: number
   score: number
+  speedMul: number
+  fireMul: number
 }
 
 export class Enemy extends Phaser.Physics.Arcade.Sprite {
@@ -17,7 +19,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   baseX = 0
   spawnT = 0
   amp = 60
-  vy = 80
+  vy = 85
+  fireMul = 1
   nextFire = 0
   formationId = -1
   score = 100
@@ -33,13 +36,14 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.pattern = opts.pattern
     this.formationId = opts.formationId
     this.score = opts.score
+    this.fireMul = opts.fireMul
     this.baseX = x
     this.spawnT = this.scene.time.now
     this.amp = Phaser.Math.Between(40, 85)
-    this.vy = opts.pattern === 'dive' ? 150 : 85
+    this.vy = (opts.pattern === 'dive' ? 150 : 85) * opts.speedMul
     this.nextFire = this.scene.time.now + Phaser.Math.Between(700, 1900)
     this.setAngle(0)
-    this.clearTint()
+    this.setScale(1)
     const body = this.body as Phaser.Physics.Arcade.Body
     body.setSize(this.width * 0.7, this.height * 0.7)
   }
@@ -68,7 +72,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
     if (time > this.nextFire && this.y > 0 && this.y < GAME_H * 0.78) {
       scene.enemyFireAt(this.x, this.y)
-      this.nextFire = time + Phaser.Math.Between(1300, 2700)
+      this.nextFire = time + Phaser.Math.Between(1300, 2700) / this.fireMul
     }
 
     if (this.y > GAME_H + 30) scene.enemyEscaped(this)

@@ -12,14 +12,19 @@ import {
   RESPAWN_INVULN_MS,
   SCORE_ENEMY,
   SCORE_POWERUP,
-  SCORE_BOSS
+  SCORE_BOSS,
+  WEAPON_MAX,
+  MAX_LOOPS,
+  DISARM_MS,
+  LOOP_BONUS,
+  STAGE_COUNT
 } from '../config'
 import { createTextures } from '../textures'
 import { Sfx } from '../audio'
 import { Bullet } from '../objects/Bullet'
 import { Enemy } from '../objects/Enemy'
 import { PowerUp } from '../objects/PowerUp'
-import { STAGE1, BOSS_AT } from '../data/waves'
+import { STAGES, type StageDef } from '../data/waves'
 import type { WaveEvent } from '../types'
 
 interface Formation {
@@ -52,6 +57,7 @@ export class PlayScene extends Phaser.Scene {
   private bossDir = 1
   private bossNextFire = 0
   private bossSpawned = false
+  private bossFireMul = 1
 
   private waves: Phaser.GameObjects.Rectangle[] = []
   private formations = new Map<number, Formation>()
@@ -64,18 +70,24 @@ export class PlayScene extends Phaser.Scene {
   private dragId = -1
 
   private weaponLevel = 0
+  private hasWings = false
   private lives = START_LIVES
   private loops = LOOPS_PER_LIFE
   private score = 0
   private invulnUntil = 0
+  private disarmUntil = 0
   private nextFireAt = 0
   private gameOver = false
+  private stage = 1
+  private stageClearing = false
 
   private scoreText!: Phaser.GameObjects.Text
   private livesText!: Phaser.GameObjects.Text
+  private stageText!: Phaser.GameObjects.Text
   private loopText!: Phaser.GameObjects.Text
   private muteText!: Phaser.GameObjects.Text
   private message!: Phaser.GameObjects.Text
+  private bannerText!: Phaser.GameObjects.Text
   private loopBtn!: Phaser.GameObjects.Arc
   private loopBtnLabel!: Phaser.GameObjects.Text
   private bossBar!: Phaser.GameObjects.Graphics
@@ -92,44 +104,35 @@ export class PlayScene extends Phaser.Scene {
     // Reset all per-run state (scenes are reused across restarts).
     this.gameOver = false
     this.weaponLevel = 0
+    this.hasWings = false
     this.lives = START_LIVES
     this.loops = LOOPS_PER_LIFE
     this.score = 0
     this.invulnUntil = this.time.now + RESPAWN_INVULN_MS
+    this.disarmUntil = 0
     this.nextFireAt = 0
-    this.waveIndex = 0
     this.formationCounter = 0
-    this.formations.clear()
-    this.boss = undefined
-    this.bossSpawned = false
-    this.bossPhase = 1
+    this.stageClearing = false
     this.dragId = -1
     this.targetX = GAME_W / 2
     this.targetY = GAME_H - 150
-    this.startTime = this.time.now
-
-    this.cameras.main.setBackgroundColor('#0b3a66')
 
     this.waves = []
     for (let i = 0; i < 8; i++) {
       this.waves.push(this.add.rectangle(GAME_W / 2, i * 110, GAME_W, 4, 0x3f8fd0, 0.18))
     }
 
-    // Pools
-    // runChildUpdate drives each pooled sprite's preUpdate (movement + culling)
-    // every frame. Required — removing it freezes enemies at their spawn points.
-    this.playerBullets = this.physics.add.group({ classType: Bullet, maxSize: 64, runChildUpdate: true })
-    this.enemyBullets = this.physics.add.group({ classType: Bullet, maxSize: 200, runChildUpdate: true })
+    // Pools (runChildUpdate drives each pooled sprite's preUpdate — required).
+    this.playerBullets = this.physics.add.group({ classType: Bullet, maxSize: 80, runChildUpdate: true })
+    this.enemyBullets = this.physics.add.group({ classType: Bullet, maxSize: 220, runChildUpdate: true })
     this.enemies = this.physics.add.group({ classType: Enemy, maxSize: 64, runChildUpdate: true })
     this.powerups = this.physics.add.group({ classType: PowerUp, maxSize: 8, runChildUpdate: true })
 
-    // Player + wingmen
     this.player = this.physics.add.sprite(this.targetX, this.targetY, 'player')
     ;(this.player.body as Phaser.Physics.Arcade.Body).setSize(PLAYER_HITBOX, PLAYER_HITBOX, true)
     this.wingLeft = this.add.image(0, 0, 'wingman').setVisible(false)
     this.wingRight = this.add.image(0, 0, 'wingman').setVisible(false)
 
-    // Overlaps
     this.physics.add.overlap(this.playerBullets, this.enemies, (b, e) =>
       this.bulletHitEnemy(b as unknown as Bullet, e as unknown as Enemy)
     )
@@ -142,6 +145,46 @@ export class PlayScene extends Phaser.Scene {
 
     this.sfx.startMusic()
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.sfx.stopMusic())
+
+    this.startStage(1)
+  }
+
+  // ---- Stages ------------------------------------------------------------
+  private startStage(n: number) {
+    this.stage = n
+    const s = STAGES[n - 1]
+    this.cameras.main.setBackgroundColor(s.bg)
+    for (const r of this.waves) r.setFillStyle(s.band, 0.18)
+    this.clearAll()
+    this.formations.clear()
+    this.waveIndex = 0
+    this.startTime = this.time.now
+    this.bossSpawned = false
+    this.bossPhase = 1
+    this.boss = undefined
+    this.bossBar.clear()
+    this.disarmUntil = 0
+    this.stageText.setText('STAGE ' + n)
+    this.banner('STAGE ' + n + '  ·  ' + s.name.toUpperCase())
+  }
+
+  private clearAll() {
+    this.enemies.getChildren().forEach((o) => {
+      const e = o as Enemy
+      if (e.active) e.disableBody(true, true)
+    })
+    this.enemyBullets.getChildren().forEach((o) => {
+      const b = o as Bullet
+      if (b.active) b.disableBody(true, true)
+    })
+    this.playerBullets.getChildren().forEach((o) => {
+      const b = o as Bullet
+      if (b.active) b.disableBody(true, true)
+    })
+    this.powerups.getChildren().forEach((o) => {
+      const p = o as PowerUp
+      if (p.active) p.deactivate()
+    })
   }
 
   // ---- HUD ---------------------------------------------------------------
@@ -149,6 +192,11 @@ export class PlayScene extends Phaser.Scene {
     const font = { fontFamily: 'monospace', fontSize: '18px', color: '#eaf2ff' }
     this.scoreText = this.add.text(12, 12, '', font).setDepth(1000)
     this.livesText = this.add.text(12, 36, '', { ...font, color: '#f2e2b6' }).setDepth(1000)
+    this.stageText = this.add
+      .text(GAME_W / 2, 14, '', { fontFamily: 'monospace', fontSize: '14px', color: '#bcd3ee' })
+      .setOrigin(0.5, 0)
+      .setDepth(1000)
+
     this.muteText = this.add
       .text(GAME_W - 12, 12, 'AUDIO', { fontFamily: 'monospace', fontSize: '14px', color: '#7fd0ff' })
       .setOrigin(1, 0)
@@ -158,7 +206,7 @@ export class PlayScene extends Phaser.Scene {
     this.muteText.on(
       'pointerdown',
       (_p: Phaser.Input.Pointer, _x: number, _y: number, evt: Phaser.Types.Input.EventData) => {
-        evt.stopPropagation() // cancels Phaser's scene-level pointerdown so the ship doesn't drag
+        evt.stopPropagation()
         const muted = this.sfx.toggleMute()
         this.muteText.setColor(muted ? '#5f6e7a' : '#7fd0ff')
       }
@@ -178,10 +226,21 @@ export class PlayScene extends Phaser.Scene {
       .setDepth(1000)
 
     this.message = this.add
-      .text(GAME_W / 2, GAME_H * 0.4, '', {
+      .text(GAME_W / 2, GAME_H * 0.46, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '28px',
+        fontSize: '26px',
         color: '#ffe14d',
+        fontStyle: 'bold'
+      })
+      .setOrigin(0.5)
+      .setDepth(1000)
+      .setAlpha(0)
+
+    this.bannerText = this.add
+      .text(GAME_W / 2, GAME_H * 0.3, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '30px',
+        color: '#f2e2b6',
         fontStyle: 'bold'
       })
       .setOrigin(0.5)
@@ -204,6 +263,12 @@ export class PlayScene extends Phaser.Scene {
   private flash(text: string) {
     this.message.setText(text).setAlpha(1).setScale(1)
     this.tweens.add({ targets: this.message, alpha: 0, scale: 1.3, duration: 900, ease: 'Cubic.easeIn' })
+  }
+
+  private banner(text: string) {
+    this.bannerText.setText(text).setAlpha(1).setScale(0.8)
+    this.tweens.add({ targets: this.bannerText, scale: 1, duration: 300, ease: 'Back.easeOut' })
+    this.tweens.add({ targets: this.bannerText, alpha: 0, delay: 1300, duration: 600 })
   }
 
   // ---- Input -------------------------------------------------------------
@@ -245,11 +310,10 @@ export class PlayScene extends Phaser.Scene {
   // ---- Loop dodge --------------------------------------------------------
   private doLoop() {
     if (this.gameOver || this.loops <= 0 || !this.player.active) return
-    if (this.invulnUntil > this.time.now + 300) return // already mid-loop
+    if (this.invulnUntil > this.time.now + 300) return
     this.loops--
     this.invulnUntil = this.time.now + LOOP_INVULN_MS
     this.sfx.loop()
-    // Clear enemy bullets currently on screen — that's the dodge.
     for (const b of this.enemyBullets.getChildren()) {
       const bullet = b as Bullet
       if (bullet.active) bullet.disableBody(true, true)
@@ -265,32 +329,43 @@ export class PlayScene extends Phaser.Scene {
 
   // ---- Firing ------------------------------------------------------------
   private autoFire() {
-    const y = this.player.y
+    const y = this.player.y - 18
     const fire = (x: number, vx = 0) => {
       const b = this.playerBullets.get() as Bullet | null
-      if (b) b.fire(x, y - 18, vx, -560, 'pbullet')
+      if (b) b.fire(x, y, vx, -560, 'pbullet')
     }
-    if (this.weaponLevel >= 1) {
-      fire(this.player.x - 12)
-      fire(this.player.x - 4)
-      fire(this.player.x + 4)
-      fire(this.player.x + 12)
-      if (this.wingLeft.visible) fire(this.wingLeft.x)
-      if (this.wingRight.visible) fire(this.wingRight.x)
+    const x = this.player.x
+    if (this.weaponLevel >= 2) {
+      fire(x - 18)
+      fire(x - 10)
+      fire(x - 3)
+      fire(x + 3)
+      fire(x + 10)
+      fire(x + 18)
+    } else if (this.weaponLevel >= 1) {
+      fire(x - 12)
+      fire(x - 4)
+      fire(x + 4)
+      fire(x + 12)
     } else {
-      fire(this.player.x - 5)
-      fire(this.player.x + 5)
+      fire(x - 5)
+      fire(x + 5)
+    }
+    if (this.hasWings) {
+      fire(this.wingLeft.x)
+      fire(this.wingRight.x)
     }
     this.sfx.shoot()
   }
 
-  // ---- Enemy callbacks (used by Enemy.preUpdate) -------------------------
+  // ---- Enemy callbacks ---------------------------------------------------
   playerX(): number {
     return this.player?.active ? this.player.x : GAME_W / 2
   }
 
   enemyFireAt(x: number, y: number) {
-    if (this.gameOver || !this.player.active) return
+    if (this.gameOver || this.stageClearing || !this.player.active) return
+    if (this.time.now < this.disarmUntil) return
     const b = this.enemyBullets.get() as Bullet | null
     if (!b) return
     const ang = Phaser.Math.Angle.Between(x, y, this.player.x, this.player.y)
@@ -300,8 +375,6 @@ export class PlayScene extends Phaser.Scene {
   }
 
   enemyEscaped(e: Enemy) {
-    // Keep formation bookkeeping accurate so the map never leaks; an escaped
-    // enemy means the formation wasn't fully cleared, so no power-up.
     const fid = e.formationId
     if (fid >= 0) {
       const f = this.formations.get(fid)
@@ -331,7 +404,6 @@ export class PlayScene extends Phaser.Scene {
         f.killed++
         f.lastX = enemy.x
         f.lastY = enemy.y
-        // Clearing the whole red formation by shooting drops the power-up.
         if (f.reds && f.killed >= f.count) this.spawnPowerup(f.lastX, f.lastY)
         if (f.killed + f.escaped >= f.count) this.formations.delete(fid)
       }
@@ -347,23 +419,61 @@ export class PlayScene extends Phaser.Scene {
 
   private collectPowerup(pu: PowerUp) {
     if (!pu.active) return
-    pu.disableBody(true, true)
-    this.score += SCORE_POWERUP
+    const t = pu.currentType()
+    pu.deactivate()
     this.sfx.powerup()
-    if (this.weaponLevel < 1) {
-      this.weaponLevel = 1
-      this.wingLeft.setVisible(true)
-      this.wingRight.setVisible(true)
-      this.flash('QUAD FIRE!')
-    } else {
-      this.flash('+' + SCORE_POWERUP)
+    switch (t) {
+      case 'P':
+        this.weaponLevel = Math.min(this.weaponLevel + 1, WEAPON_MAX)
+        this.flash('POWER UP')
+        break
+      case 'S':
+        this.hasWings = true
+        this.wingLeft.setVisible(true)
+        this.wingRight.setVisible(true)
+        this.flash('SIDE FIGHTERS')
+        break
+      case 'L':
+        this.loops = Math.min(this.loops + 1, MAX_LOOPS)
+        this.flash('+1 LOOP')
+        break
+      case 'B':
+        this.smartBomb()
+        this.flash('BOMB!')
+        break
+      case 'D':
+        this.disarmUntil = this.time.now + DISARM_MS
+        this.flash('DISARMED')
+        break
+      case '1':
+        this.lives++
+        this.flash('1UP')
+        break
     }
+    this.score += SCORE_POWERUP
     this.updateHud()
+  }
+
+  private smartBomb() {
+    for (const o of this.enemies.getChildren()) {
+      const e = o as Enemy
+      if (e.active) {
+        this.score += e.score
+        this.explode(e.x, e.y, 0xffb347)
+        e.disableBody(true, true)
+      }
+    }
+    for (const o of this.enemyBullets.getChildren()) {
+      const b = o as Bullet
+      if (b.active) b.disableBody(true, true)
+    }
+    this.cameras.main.flash(200, 255, 255, 255)
+    this.sfx.bossDie()
   }
 
   private enemyTouchesPlayer(enemy: Enemy) {
     if (!enemy.active) return
-    if (this.time.now < this.invulnUntil) return // phase through while looping/respawning, like bullets
+    if (this.time.now < this.invulnUntil) return
     this.explode(enemy.x, enemy.y, 0xe24b4a)
     enemy.disableBody(true, true)
     this.hurtPlayer()
@@ -383,6 +493,7 @@ export class PlayScene extends Phaser.Scene {
     this.explode(this.player.x, this.player.y, 0xf2e2b6)
     this.cameras.main.shake(200, 0.012)
     this.weaponLevel = 0
+    this.hasWings = false
     this.wingLeft.setVisible(false)
     this.wingRight.setVisible(false)
     this.loops = LOOPS_PER_LIFE
@@ -395,12 +506,13 @@ export class PlayScene extends Phaser.Scene {
   }
 
   // ---- Boss --------------------------------------------------------------
-  private spawnBoss() {
+  private spawnBoss(s: StageDef) {
     this.bossSpawned = true
-    this.bossMaxHp = 90
-    this.bossHp = 90
+    this.bossMaxHp = s.bossHp
+    this.bossHp = s.bossHp
     this.bossPhase = 1
     this.bossDir = 1
+    this.bossFireMul = s.fireMul
     this.bossNextFire = this.time.now + 1200
     const boss = this.physics.add.sprite(GAME_W / 2, -60, 'boss')
     ;(boss.body as Phaser.Physics.Arcade.Body).setSize(boss.width * 0.8, boss.height * 0.7, true)
@@ -439,12 +551,31 @@ export class PlayScene extends Phaser.Scene {
     this.boss.destroy()
     this.boss = undefined
     this.bossBar.clear()
+    this.onBossDefeated()
+  }
+
+  private onBossDefeated() {
+    const bonus = this.loops * LOOP_BONUS
+    if (bonus > 0) {
+      this.score += bonus
+      this.flash('LOOP BONUS +' + bonus)
+    }
     this.updateHud()
-    this.endGame(true)
+    if (this.stage >= STAGE_COUNT) {
+      this.endGame(true)
+      return
+    }
+    this.stageClearing = true
+    this.time.delayedCall(1900, () => {
+      this.loops = LOOPS_PER_LIFE
+      this.stageClearing = false
+      this.startStage(this.stage + 1)
+      this.updateHud()
+    })
   }
 
   private bossFire() {
-    if (!this.boss) return
+    if (!this.boss || this.time.now < this.disarmUntil) return
     const bx = this.boss.x
     const by = this.boss.y + 40
     const shoot = (ang: number) => {
@@ -475,10 +606,9 @@ export class PlayScene extends Phaser.Scene {
       }
       if (time > this.bossNextFire) {
         this.bossFire()
-        this.bossNextFire = time + (this.bossPhase === 2 ? 750 : 1200)
+        this.bossNextFire = time + (this.bossPhase === 2 ? 750 : 1200) / this.bossFireMul
       }
     }
-    // HP bar
     this.bossBar.clear()
     this.bossBar.fillStyle(0x331111).fillRect(40, 18, GAME_W - 80, 8)
     this.bossBar.fillStyle(0xe24b4a).fillRect(40, 18, (GAME_W - 80) * (this.bossHp / this.bossMaxHp), 8)
@@ -519,26 +649,32 @@ export class PlayScene extends Phaser.Scene {
   }
 
   // ---- Wave director -----------------------------------------------------
-  private spawnWave(w: WaveEvent) {
+  private spawnWave(w: WaveEvent, s: StageDef) {
     const fid = this.formationCounter++
     if (w.reds)
       this.formations.set(fid, { count: w.count, killed: 0, escaped: 0, reds: true, lastX: GAME_W / 2, lastY: 120 })
     const texture = w.reds ? 'enemy' : 'enemyGrey'
-    const score = SCORE_ENEMY * w.hp
+    const hp = w.hp * s.hpMul
+    const score = SCORE_ENEMY * hp
     const spread = Math.min(GAME_W - 80, w.count * 52)
     const x0 = GAME_W / 2 - spread / 2
+    const mid = (w.count - 1) / 2
     for (let i = 0; i < w.count; i++) {
       const e = this.enemies.get() as Enemy | null
       if (!e) break
       const x = w.count === 1 ? GAME_W / 2 : x0 + (spread / (w.count - 1)) * i
-      // V shape: middle enemies lower, edges higher
-      const vy = -40 - Math.abs(i - (w.count - 1) / 2) * 26
-      e.spawn(Phaser.Math.Clamp(x, 30, GAME_W - 30), vy, {
-        hp: w.hp,
+      const d = Math.abs(i - mid)
+      let yOff = -40
+      if (w.shape === 'vee') yOff = -40 - d * 26
+      else if (w.shape === 'arc') yOff = -40 - (mid - d) * 24
+      e.spawn(Phaser.Math.Clamp(x, 30, GAME_W - 30), yOff, {
+        hp,
         pattern: w.pattern,
         texture,
         formationId: w.reds ? fid : -1,
-        score
+        score,
+        speedMul: s.speedMul,
+        fireMul: s.fireMul
       })
     }
   }
@@ -547,7 +683,6 @@ export class PlayScene extends Phaser.Scene {
   update(time: number, delta: number) {
     const dt = delta / 1000
 
-    // scroll sea
     const dy = (delta / 1000) * 90
     for (const r of this.waves) {
       r.y += dy
@@ -556,13 +691,11 @@ export class PlayScene extends Phaser.Scene {
 
     if (this.gameOver) return
 
-    // keyboard nudge (desktop testing)
     if (this.cursors.left.isDown) this.targetX = Phaser.Math.Clamp(this.targetX - 360 * dt, 16, GAME_W - 16)
     if (this.cursors.right.isDown) this.targetX = Phaser.Math.Clamp(this.targetX + 360 * dt, 16, GAME_W - 16)
     if (this.cursors.up.isDown) this.targetY = Phaser.Math.Clamp(this.targetY - 360 * dt, 40, GAME_H - 20)
     if (this.cursors.down.isDown) this.targetY = Phaser.Math.Clamp(this.targetY + 360 * dt, 40, GAME_H - 20)
 
-    // ship follow + wingmen
     if (this.player.active) {
       this.player.x = Phaser.Math.Linear(this.player.x, this.targetX, PLAYER_FOLLOW)
       this.player.y = Phaser.Math.Linear(this.player.y, this.targetY, PLAYER_FOLLOW)
@@ -571,32 +704,30 @@ export class PlayScene extends Phaser.Scene {
       this.wingRight.x = this.player.x + 28
       this.wingRight.y = this.player.y + 14
 
-      // invulnerability flicker
       const invuln = this.time.now < this.invulnUntil
       this.player.setAlpha(invuln && Math.floor(this.time.now / 80) % 2 === 0 ? 0.35 : 1)
 
-      // auto-fire
       if (time > this.nextFireAt) {
         this.autoFire()
         this.nextFireAt = time + PLAYER_FIRE_MS
       }
     }
 
-    // wave director
+    const s = STAGES[this.stage - 1]
     const elapsed = (time - this.startTime) / 1000
-    while (this.waveIndex < STAGE1.length && STAGE1[this.waveIndex].at <= elapsed) {
-      this.spawnWave(STAGE1[this.waveIndex])
+    while (!this.stageClearing && this.waveIndex < s.waves.length && s.waves[this.waveIndex].at <= elapsed) {
+      this.spawnWave(s.waves[this.waveIndex], s)
       this.waveIndex++
     }
 
-    // boss spawn once waves are done and the screen is clear
     if (
       !this.bossSpawned &&
-      elapsed >= BOSS_AT &&
-      this.waveIndex >= STAGE1.length &&
+      !this.stageClearing &&
+      elapsed >= s.bossAt &&
+      this.waveIndex >= s.waves.length &&
       this.enemies.countActive(true) === 0
     ) {
-      this.spawnBoss()
+      this.spawnBoss(s)
     }
 
     this.updateBoss(time, dt)
