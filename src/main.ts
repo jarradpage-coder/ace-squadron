@@ -1,5 +1,8 @@
 import Phaser from 'phaser'
-import { PlayScene, GAME_W, GAME_H } from './scenes/PlayScene'
+import { GAME_W, GAME_H } from './config'
+import { TitleScene } from './scenes/TitleScene'
+import { PlayScene } from './scenes/PlayScene'
+import { GameOverScene } from './scenes/GameOverScene'
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -11,8 +14,14 @@ const config: Phaser.Types.Core.GameConfig = {
     width: GAME_W,
     height: GAME_H
   },
+  physics: {
+    default: 'arcade',
+    arcade: { debug: false }
+  },
   fps: { target: 60 },
-  scene: [PlayScene]
+  scene: [TitleScene, PlayScene, GameOverScene]
 }
 
-new Phaser.Game(config)
+const game = new Phaser.Game(config)
+// Exposed for debugging/automated verification only.
+;(window as unknown as { game: Phaser.Game }).game = game

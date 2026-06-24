@@ -28,7 +28,7 @@ export default defineConfig(({ command }) => ({
           { src: 'maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
-      devOptions: { enabled: true }
+      devOptions: { enabled: false }
     })
   ]
 }))
