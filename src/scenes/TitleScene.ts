@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { GAME_W, GAME_H, loadHiScore } from '../config'
+import { GAME_W, GAME_H, loadScores } from '../config'
 import { createTextures } from '../textures'
 import { Sfx } from '../audio'
 
@@ -37,14 +37,26 @@ export class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
 
-    const hi = loadHiScore()
-    this.add
-      .text(GAME_W / 2, GAME_H - 190, 'HI ' + hi.toString().padStart(6, '0'), {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#7fd0ff'
+    const top = loadScores()
+    if (top.length > 0) {
+      this.add
+        .text(GAME_W / 2, GAME_H - 236, 'BEST PILOTS', {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '14px',
+          color: '#bcd3ee'
+        })
+        .setOrigin(0.5)
+      top.slice(0, 3).forEach((e, i) => {
+        this.add
+          .text(
+            GAME_W / 2,
+            GAME_H - 212 + i * 24,
+            i + 1 + '. ' + e.initials + '  ' + e.score.toString().padStart(6, '0'),
+            { fontFamily: 'monospace', fontSize: '16px', color: '#7fd0ff' }
+          )
+          .setOrigin(0.5)
       })
-      .setOrigin(0.5)
+    }
 
     const tap = this.add
       .text(GAME_W / 2, GAME_H - 130, 'tap to start', {

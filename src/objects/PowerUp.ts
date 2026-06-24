@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { GAME_H, POW_CYCLE_MS } from '../config'
 import type { PowType } from '../types'
+import type { PlayScene } from '../scenes/PlayScene'
 
 interface PowDef {
   t: PowType
@@ -56,6 +57,7 @@ export class PowerUp extends Phaser.Physics.Arcade.Sprite {
   preUpdate(time: number, delta: number): void {
     super.preUpdate(time, delta)
     if (!this.active) return
+    if ((this.scene as PlayScene).paused) return
     if (time > this.nextCycle) {
       this.idx = (this.idx + 1) % TYPES.length
       this.nextCycle = time + POW_CYCLE_MS

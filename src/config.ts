@@ -40,3 +40,71 @@ export function saveHiScore(score: number): void {
     /* private mode / disabled storage — ignore */
   }
 }
+
+// --- Persisted sound setting ---
+const SETTINGS_KEY = 'aceSquadron.settings.v1'
+export function loadSoundOn(): boolean {
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
+    return s.sound !== false
+  } catch {
+    return true
+  }
+}
+export function saveSoundOn(on: boolean): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ sound: on }))
+  } catch {
+    /* ignore */
+  }
+}
+
+// --- Local leaderboard ---
+export interface ScoreEntry {
+  initials: string
+  score: number
+}
+const SCORES_KEY = 'aceSquadron.scores.v1'
+export const SCORE_SLOTS = 5
+
+export function loadScores(): ScoreEntry[] {
+  let list: ScoreEntry[] = []
+  try {
+    const arr = JSON.parse(localStorage.getItem(SCORES_KEY) || '[]')
+    if (Array.isArray(arr)) {
+      list = arr
+        .filter((e) => e && typeof e.score === 'number')
+        .map((e) => ({ initials: String(e.initials || 'ACE').slice(0, 3).toUpperCase(), score: e.score | 0 }))
+    }
+  } catch {
+    /* ignore corrupt data */
+  }
+  if (list.length === 0) {
+    const oldHi = loadHiScore() // seed from the old single high score
+    if (oldHi > 0) list = [{ initials: 'ACE', score: oldHi }]
+  }
+  return list.sort((a, b) => b.score - a.score).slice(0, SCORE_SLOTS)
+}
+
+export function saveScores(list: ScoreEntry[]): void {
+  try {
+    localStorage.setItem(SCORES_KEY, JSON.stringify(list.slice(0, SCORE_SLOTS)))
+  } catch {
+    /* ignore */
+  }
+}
+
+export function qualifies(score: number): boolean {
+  if (score <= 0) return false
+  const list = loadScores()
+  return list.length < SCORE_SLOTS || score > list[list.length - 1].score
+}
+
+export function addScore(initials: string, score: number): ScoreEntry[] {
+  const list = loadScores()
+  list.push({ initials: initials.slice(0, 3).toUpperCase() || 'ACE', score })
+  list.sort((a, b) => b.score - a.score)
+  const top = list.slice(0, SCORE_SLOTS)
+  saveScores(top)
+  return top
+}

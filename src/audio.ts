@@ -2,12 +2,18 @@
 // Self-generated, so it's 100% ours, offline, and zero-asset.
 type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle'
 
+import { loadSoundOn, saveSoundOn } from './config'
+
 export class Sfx {
   private ctx?: AudioContext
   private master?: GainNode
   muted = false
   private musicTimer?: number
   private step = 0
+
+  constructor() {
+    this.muted = !loadSoundOn() // remember the player's choice across sessions
+  }
 
   // Must be called from a user gesture (mobile Safari locks audio until then).
   unlock(): void {
@@ -112,6 +118,7 @@ export class Sfx {
 
   toggleMute(): boolean {
     this.muted = !this.muted
+    saveSoundOn(!this.muted)
     if (this.muted) this.stopMusic()
     else this.startMusic()
     return this.muted

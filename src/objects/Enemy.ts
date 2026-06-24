@@ -52,6 +52,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     super.preUpdate(time, delta)
     if (!this.active) return
     const scene = this.scene as PlayScene
+    if (scene.paused) return
     const elapsed = (time - this.spawnT) / 1000
     const dt = delta / 1000
 

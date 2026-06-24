@@ -81,6 +81,9 @@ export class PlayScene extends Phaser.Scene {
   private gameOver = false
   private stage = 1
   private stageClearing = false
+  paused = false
+  private shotsFired = 0
+  private shotsHit = 0
 
   private scoreText!: Phaser.GameObjects.Text
   private livesText!: Phaser.GameObjects.Text
@@ -93,6 +96,9 @@ export class PlayScene extends Phaser.Scene {
   private loopBtnLabel!: Phaser.GameObjects.Text
   private bossBar!: Phaser.GameObjects.Graphics
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
+  private pauseText!: Phaser.GameObjects.Text
+  private pauseOverlay!: Phaser.GameObjects.Container
+  private hudButtons: Phaser.GameObjects.Text[] = []
 
   constructor() {
     super('play')
@@ -115,6 +121,9 @@ export class PlayScene extends Phaser.Scene {
     this.formationCounter = 0
     this.stageClearing = false
     this.bossColliders = []
+    this.paused = false
+    this.shotsFired = 0
+    this.shotsHit = 0
     this.dragId = -1
     this.targetX = GAME_W / 2
     this.targetY = GAME_H - 150
@@ -215,6 +224,20 @@ export class PlayScene extends Phaser.Scene {
       }
     )
 
+    this.pauseText = this.add
+      .text(GAME_W - 12, 34, 'PAUSE', { fontFamily: 'monospace', fontSize: '14px', color: '#7fd0ff' })
+      .setOrigin(1, 0)
+      .setDepth(1000)
+      .setInteractive({ useHandCursor: true })
+    this.pauseText.on(
+      'pointerdown',
+      (_p: Phaser.Input.Pointer, _x: number, _y: number, evt: Phaser.Types.Input.EventData) => {
+        evt.stopPropagation()
+        this.pauseGame()
+      }
+    )
+    this.hudButtons = [this.muteText, this.pauseText]
+
     this.loopBtn = this.add
       .circle(GAME_W - 58, GAME_H - 76, LOOP_BTN_R, 0xffffff, 0.1)
       .setStrokeStyle(2, 0x7fd0ff)
@@ -251,6 +274,30 @@ export class PlayScene extends Phaser.Scene {
       .setAlpha(0)
 
     this.bossBar = this.add.graphics().setDepth(1000)
+
+    // Pause overlay — an interactive dim that resumes on tap.
+    const dim = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.66).setInteractive()
+    dim.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, evt: Phaser.Types.Input.EventData) => {
+      evt.stopPropagation()
+      this.resumeGame()
+    })
+    const pTitle = this.add
+      .text(GAME_W / 2, GAME_H / 2 - 22, 'PAUSED', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '36px',
+        color: '#eaf2ff',
+        fontStyle: 'bold'
+      })
+      .setOrigin(0.5)
+    const pHint = this.add
+      .text(GAME_W / 2, GAME_H / 2 + 22, 'tap to resume', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '18px',
+        color: '#bcd3ee'
+      })
+      .setOrigin(0.5)
+    this.pauseOverlay = this.add.container(0, 0, [dim, pTitle, pHint]).setDepth(2000).setVisible(false)
+
     this.updateHud()
   }
 
@@ -281,7 +328,8 @@ export class PlayScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-SPACE', () => this.doLoop())
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (this.overMuteButton(p)) return
+      if (this.paused) return
+      if (this.overHudButton(p)) return
       if (this.overLoopButton(p)) {
         this.doLoop()
         return
@@ -301,8 +349,28 @@ export class PlayScene extends Phaser.Scene {
     return Phaser.Math.Distance.Between(p.x, p.y, this.loopBtn.x, this.loopBtn.y) <= LOOP_BTN_R + 8
   }
 
-  private overMuteButton(p: Phaser.Input.Pointer): boolean {
-    return this.muteText.getBounds().contains(p.x, p.y)
+  private overHudButton(p: Phaser.Input.Pointer): boolean {
+    return this.hudButtons.some((b) => b.getBounds().contains(p.x, p.y))
+  }
+
+  private pauseGame() {
+    if (this.paused || this.gameOver || this.stageClearing) return
+    this.paused = true
+    this.physics.pause()
+    this.tweens.pauseAll()
+    this.time.paused = true
+    this.sfx.stopMusic()
+    this.pauseOverlay.setVisible(true)
+  }
+
+  private resumeGame() {
+    if (!this.paused) return
+    this.paused = false
+    this.physics.resume()
+    this.tweens.resumeAll()
+    this.time.paused = false
+    if (!this.sfx.muted) this.sfx.startMusic()
+    this.pauseOverlay.setVisible(false)
   }
 
   private aimAt(p: Phaser.Input.Pointer) {
@@ -335,7 +403,10 @@ export class PlayScene extends Phaser.Scene {
     const y = this.player.y - 18
     const fire = (x: number, vx = 0) => {
       const b = this.playerBullets.get() as Bullet | null
-      if (b) b.fire(x, y, vx, -560, 'pbullet')
+      if (b) {
+        b.fire(x, y, vx, -560, 'pbullet')
+        this.shotsFired++
+      }
     }
     const x = this.player.x
     if (this.weaponLevel >= 2) {
@@ -393,6 +464,7 @@ export class PlayScene extends Phaser.Scene {
   private bulletHitEnemy(bullet: Bullet, enemy: Enemy) {
     if (!bullet.active || !enemy.active) return
     bullet.disableBody(true, true)
+    this.shotsHit++
     if (enemy.damage(1)) this.killEnemy(enemy)
   }
 
@@ -556,6 +628,7 @@ export class PlayScene extends Phaser.Scene {
   private bulletHitBoss(bullet: Bullet) {
     if (!bullet.active || !this.boss) return
     bullet.disableBody(true, true)
+    this.shotsHit++
     this.bossHp--
     this.boss.setAlpha(0.6)
     this.time.delayedCall(40, () => this.boss?.setAlpha(1))
@@ -677,7 +750,9 @@ export class PlayScene extends Phaser.Scene {
       this.boss?.setVisible(false)
       this.bossBar.clear()
     }
-    this.time.delayedCall(win ? 1300 : 700, () => this.scene.start('over', { score: this.score, win }))
+    this.time.delayedCall(win ? 1300 : 700, () =>
+      this.scene.start('over', { score: this.score, win, shots: this.shotsFired, hits: this.shotsHit })
+    )
   }
 
   // ---- Wave director -----------------------------------------------------
@@ -713,6 +788,7 @@ export class PlayScene extends Phaser.Scene {
 
   // ---- Main loop ---------------------------------------------------------
   update(time: number, delta: number) {
+    if (this.paused) return
     const dt = delta / 1000
 
     const dy = (delta / 1000) * 90
