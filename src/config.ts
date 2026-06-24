@@ -74,7 +74,10 @@ export function loadScores(): ScoreEntry[] {
     if (Array.isArray(arr)) {
       list = arr
         .filter((e) => e && typeof e.score === 'number')
-        .map((e) => ({ initials: String(e.initials || 'ACE').slice(0, 3).toUpperCase(), score: e.score | 0 }))
+        .map((e) => ({
+          initials: String(e.initials || 'ACE').slice(0, 3).toUpperCase(),
+          score: Math.max(0, Math.floor(Number(e.score) || 0))
+        }))
     }
   } catch {
     /* ignore corrupt data */

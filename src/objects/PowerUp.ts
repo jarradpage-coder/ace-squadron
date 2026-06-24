@@ -67,6 +67,10 @@ export class PowerUp extends Phaser.Physics.Arcade.Sprite {
     if (this.y > GAME_H + 30) this.deactivate()
   }
 
+  shiftTimers(d: number): void {
+    this.nextCycle += d // keep the colour-cycle continuous across a pause
+  }
+
   deactivate(): void {
     this.label.setVisible(false)
     this.disableBody(true, true)

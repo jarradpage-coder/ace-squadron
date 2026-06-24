@@ -82,6 +82,7 @@ export class PlayScene extends Phaser.Scene {
   private stage = 1
   private stageClearing = false
   paused = false
+  private pausedAt = 0
   private shotsFired = 0
   private shotsHit = 0
 
@@ -122,6 +123,9 @@ export class PlayScene extends Phaser.Scene {
     this.stageClearing = false
     this.bossColliders = []
     this.paused = false
+    this.time.paused = false // self-heal in case a prior run somehow ended paused
+    this.physics.resume()
+    this.tweens.resumeAll()
     this.shotsFired = 0
     this.shotsHit = 0
     this.dragId = -1
@@ -338,6 +342,7 @@ export class PlayScene extends Phaser.Scene {
       this.aimAt(p)
     })
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (this.paused) return
       if (p.id === this.dragId && p.isDown) this.aimAt(p)
     })
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
@@ -356,6 +361,8 @@ export class PlayScene extends Phaser.Scene {
   private pauseGame() {
     if (this.paused || this.gameOver || this.stageClearing) return
     this.paused = true
+    this.pausedAt = this.time.now
+    this.dragId = -1 // drop any held drag so it can't pre-aim during the freeze
     this.physics.pause()
     this.tweens.pauseAll()
     this.time.paused = true
@@ -365,6 +372,23 @@ export class PlayScene extends Phaser.Scene {
 
   private resumeGame() {
     if (!this.paused) return
+    // Phaser's clock keeps advancing while "paused", so shift every wall-clock
+    // deadline forward by the real pause duration — otherwise invuln/disarm burn
+    // down and queued waves dump all at once on resume.
+    const d = this.time.now - this.pausedAt
+    this.invulnUntil += d
+    this.disarmUntil += d
+    this.startTime += d
+    this.nextFireAt += d
+    this.bossNextFire += d
+    this.enemies.getChildren().forEach((o) => {
+      const e = o as Enemy
+      if (e.active) e.shiftTimers(d)
+    })
+    this.powerups.getChildren().forEach((o) => {
+      const p = o as PowerUp
+      if (p.active) p.shiftTimers(d)
+    })
     this.paused = false
     this.physics.resume()
     this.tweens.resumeAll()

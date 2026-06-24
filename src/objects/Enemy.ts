@@ -79,6 +79,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (this.y > GAME_H + 30) scene.enemyEscaped(this)
   }
 
+  // Shift this enemy's timers forward after a pause so movement/fire stay continuous.
+  shiftTimers(d: number): void {
+    this.nextFire += d
+    this.spawnT += d
+  }
+
   // returns true if destroyed
   damage(n: number): boolean {
     this.hp -= n

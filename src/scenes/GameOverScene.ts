@@ -102,13 +102,15 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   private submitInitials() {
-    addScore(this.slots.join(''), this.score)
+    const initials = this.slots.join('').slice(0, 3).toUpperCase() || 'ACE'
+    const top = addScore(initials, this.score)
+    const idx = top.findIndex((e) => e.initials === initials && e.score === this.score)
     this.entryUI?.destroy()
     this.entryUI = undefined
-    this.showLeaderboard(this.score)
+    this.showLeaderboard(idx)
   }
 
-  private showLeaderboard(highlightScore: number) {
+  private showLeaderboard(highlightIndex: number) {
     const top = loadScores()
     const startY = 250
     this.add
@@ -119,10 +121,8 @@ export class GameOverScene extends Phaser.Scene {
         .text(GAME_W / 2, startY, 'no scores yet', { fontFamily: 'monospace', fontSize: '16px', color: '#7fd0ff' })
         .setOrigin(0.5)
     }
-    let highlighted = false
     top.forEach((e, i) => {
-      const hi = !highlighted && e.score === highlightScore
-      if (hi) highlighted = true
+      const hi = i === highlightIndex
       const row = i + 1 + '.  ' + e.initials + '   ' + e.score.toString().padStart(6, '0')
       this.add
         .text(GAME_W / 2, startY + i * 30, row, {
