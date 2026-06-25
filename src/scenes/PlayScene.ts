@@ -233,10 +233,9 @@ export class PlayScene extends Phaser.Scene {
   private scrollTerrain(dt: number) {
     for (const t of this.terrain) {
       t.img.y += t.speed * dt
-      if (t.img.y > GAME_H + 130) {
-        const minY = Math.min(...this.terrain.map((o) => o.img.y))
-        this.placeTerrain(t, minY - Phaser.Math.Between(150, 380))
-      }
+      // Respawn in a band just above the top edge. (Anchoring to the global
+      // topmost item let faster vessels stack far off-screen, thinning the layer.)
+      if (t.img.y > GAME_H + 130) this.placeTerrain(t, -Phaser.Math.Between(60, 320))
     }
   }
 
