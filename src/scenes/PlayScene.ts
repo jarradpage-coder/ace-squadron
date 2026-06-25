@@ -61,6 +61,8 @@ export class PlayScene extends Phaser.Scene {
   private bossColliders: Phaser.Physics.Arcade.Collider[] = []
 
   private waves: Phaser.GameObjects.Rectangle[] = []
+  private terrain: { img: Phaser.GameObjects.Image; speed: number }[] = []
+  private terrainTint = 0xffffff
   private formations = new Map<number, Formation>()
   private formationCounter = 0
   private waveIndex = 0
@@ -134,8 +136,9 @@ export class PlayScene extends Phaser.Scene {
 
     this.waves = []
     for (let i = 0; i < 8; i++) {
-      this.waves.push(this.add.rectangle(GAME_W / 2, i * 110, GAME_W, 4, 0x3f8fd0, 0.18))
+      this.waves.push(this.add.rectangle(GAME_W / 2, i * 110, GAME_W, 4, 0x3f8fd0, 0.18).setDepth(-20))
     }
+    this.setupTerrain()
 
     // Pools (runChildUpdate drives each pooled sprite's preUpdate — required).
     this.playerBullets = this.physics.add.group({ classType: Bullet, maxSize: 96, runChildUpdate: true })
@@ -170,6 +173,8 @@ export class PlayScene extends Phaser.Scene {
     const s = STAGES[n - 1]
     this.cameras.main.setBackgroundColor(s.bg)
     for (const r of this.waves) r.setFillStyle(s.band, 0.18)
+    this.terrainTint = n === 1 ? 0xffffff : n === 2 ? 0xffce96 : 0x6f82ab
+    this.terrain.forEach((t) => t.img.setTint(this.terrainTint))
     this.clearAll()
     this.formations.clear()
     this.waveIndex = 0
@@ -201,6 +206,38 @@ export class PlayScene extends Phaser.Scene {
       const p = o as PowerUp
       if (p.active) p.deactivate()
     })
+  }
+
+  // ---- Terrain (decorative scrolling scenery, depth -10, no collision) ----
+  private setupTerrain() {
+    this.terrain = []
+    for (let i = 0; i < 7; i++) {
+      const img = this.add.image(0, 0, 'island1').setDepth(-10)
+      const item = { img, speed: 0 }
+      this.terrain.push(item)
+      this.placeTerrain(item, Phaser.Math.Between(-200, GAME_H))
+    }
+  }
+
+  private placeTerrain(item: { img: Phaser.GameObjects.Image; speed: number }, y: number) {
+    const pick = Phaser.Math.RND.pick(['island1', 'island2', 'island2', 'island1', 'ship', 'ship', 'carrier'])
+    const isShip = pick === 'ship' || pick === 'carrier'
+    item.img.setTexture(pick)
+    item.img.setPosition(Phaser.Math.Between(36, GAME_W - 36), y)
+    item.img.setAngle(isShip ? Phaser.Math.Between(-14, 14) : Phaser.Math.Between(0, 359))
+    item.img.setAlpha(0.95)
+    item.img.setTint(this.terrainTint)
+    item.speed = isShip ? Phaser.Math.Between(95, 125) : Phaser.Math.Between(68, 92)
+  }
+
+  private scrollTerrain(dt: number) {
+    for (const t of this.terrain) {
+      t.img.y += t.speed * dt
+      if (t.img.y > GAME_H + 130) {
+        const minY = Math.min(...this.terrain.map((o) => o.img.y))
+        this.placeTerrain(t, minY - Phaser.Math.Between(150, 380))
+      }
+    }
   }
 
   // ---- HUD ---------------------------------------------------------------
@@ -827,6 +864,7 @@ export class PlayScene extends Phaser.Scene {
       r.y += dy
       if (r.y > GAME_H + 4) r.y -= GAME_H + 120
     }
+    this.scrollTerrain(dt)
 
     if (this.gameOver) return
 

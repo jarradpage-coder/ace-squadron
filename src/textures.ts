@@ -84,5 +84,53 @@ export function createTextures(scene: Phaser.Scene): void {
   g.fillRect(0, 0, 6, 6)
   g.generateTexture('particle', 6, 6)
 
+  // --- Terrain (scrolling background scenery) ---
+
+  // Large island / atoll
+  g.clear()
+  g.fillStyle(0xc9a96b)
+  g.fillEllipse(42, 35, 84, 64)
+  g.fillStyle(0x3f7d4a)
+  g.fillEllipse(42, 33, 62, 44)
+  g.fillStyle(0x2c6138)
+  g.fillEllipse(39, 31, 34, 24)
+  g.generateTexture('island1', 84, 70)
+
+  // Small atoll with a lagoon
+  g.clear()
+  g.fillStyle(0xc9a96b)
+  g.fillEllipse(30, 27, 56, 48)
+  g.fillStyle(0x3f7d4a)
+  g.fillEllipse(30, 26, 40, 32)
+  g.fillStyle(0x2f6f9a)
+  g.fillEllipse(31, 26, 16, 12)
+  g.generateTexture('island2', 60, 54)
+
+  // Destroyer (top-down): triangular bow + rounded hull, with a wake
+  g.clear()
+  g.fillStyle(0xffffff, 0.16)
+  g.fillTriangle(11, 80, 2, 66, 20, 66) // wake astern
+  g.fillStyle(0x76828f)
+  g.fillTriangle(11, 0, 3, 17, 19, 17)
+  g.fillRoundedRect(3, 14, 16, 52, 5)
+  g.fillStyle(0x9aa6b4)
+  g.fillRect(7, 28, 8, 16)
+  g.fillStyle(0x3a4350)
+  g.fillRect(9, 9, 4, 7)
+  g.generateTexture('ship', 22, 82)
+
+  // Carrier (top-down, flight deck)
+  g.clear()
+  g.fillStyle(0x5b6474)
+  g.fillRoundedRect(2, 0, 34, 118, 6)
+  g.fillStyle(0x39414c)
+  g.fillRect(18, 8, 2, 102)
+  g.fillStyle(0xd7c98a)
+  g.fillRect(15, 6, 8, 3)
+  g.fillRect(15, 109, 8, 3)
+  g.fillStyle(0x6b7682)
+  g.fillRect(28, 42, 8, 22)
+  g.generateTexture('carrier', 38, 120)
+
   g.destroy()
 }
