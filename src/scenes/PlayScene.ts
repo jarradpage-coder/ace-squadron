@@ -60,7 +60,7 @@ export class PlayScene extends Phaser.Scene {
   private bossFireMul = 1
   private bossColliders: Phaser.Physics.Arcade.Collider[] = []
 
-  private waves: Phaser.GameObjects.Rectangle[] = []
+  private whitecaps: { rect: Phaser.GameObjects.Rectangle; speed: number }[] = []
   private terrain: { img: Phaser.GameObjects.Image; speed: number }[] = []
   private terrainTint = 0xffffff
   private formations = new Map<number, Formation>()
@@ -134,9 +134,12 @@ export class PlayScene extends Phaser.Scene {
     this.targetX = GAME_W / 2
     this.targetY = GAME_H - 150
 
-    this.waves = []
-    for (let i = 0; i < 8; i++) {
-      this.waves.push(this.add.rectangle(GAME_W / 2, i * 110, GAME_W, 4, 0x3f8fd0, 0.18).setDepth(-20))
+    this.whitecaps = []
+    for (let i = 0; i < 36; i++) {
+      const rect = this.add.rectangle(0, 0, Phaser.Math.Between(5, 11), 2, 0xbfe3f7, 0.22).setDepth(-20)
+      const item = { rect, speed: 0 }
+      this.whitecaps.push(item)
+      this.placeWhitecap(item, Phaser.Math.Between(0, GAME_H))
     }
     this.setupTerrain()
 
@@ -172,7 +175,8 @@ export class PlayScene extends Phaser.Scene {
     this.stage = n
     const s = STAGES[n - 1]
     this.cameras.main.setBackgroundColor(s.bg)
-    for (const r of this.waves) r.setFillStyle(s.band, 0.18)
+    const foam = n === 1 ? 0xbfe3f7 : n === 2 ? 0xf6d6a8 : 0x9fb0e0
+    for (const w of this.whitecaps) w.rect.setFillStyle(foam, 0.22)
     this.terrainTint = n === 1 ? 0xffffff : n === 2 ? 0xffce96 : 0x6f82ab
     this.terrain.forEach((t) => t.img.setTint(this.terrainTint))
     this.clearAll()
@@ -206,6 +210,11 @@ export class PlayScene extends Phaser.Scene {
       const p = o as PowerUp
       if (p.active) p.deactivate()
     })
+  }
+
+  private placeWhitecap(w: { rect: Phaser.GameObjects.Rectangle; speed: number }, y: number) {
+    w.rect.setPosition(Phaser.Math.Between(12, GAME_W - 12), y)
+    w.speed = Phaser.Math.Between(70, 110)
   }
 
   // ---- Terrain (decorative scrolling scenery, depth -10, no collision) ----
@@ -858,10 +867,9 @@ export class PlayScene extends Phaser.Scene {
     if (this.paused) return
     const dt = delta / 1000
 
-    const dy = (delta / 1000) * 90
-    for (const r of this.waves) {
-      r.y += dy
-      if (r.y > GAME_H + 4) r.y -= GAME_H + 120
+    for (const w of this.whitecaps) {
+      w.rect.y += w.speed * dt
+      if (w.rect.y > GAME_H + 6) this.placeWhitecap(w, -Phaser.Math.Between(4, 30))
     }
     this.scrollTerrain(dt)
 
