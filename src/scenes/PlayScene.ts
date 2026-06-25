@@ -638,7 +638,13 @@ export class PlayScene extends Phaser.Scene {
     this.boss = boss
     this.tweens.add({ targets: boss, y: 130, duration: 1500, ease: 'Sine.easeOut' })
     this.bossColliders = [
-      this.physics.add.overlap(this.playerBullets, boss, (b) => this.bulletHitBoss(b as unknown as Bullet)),
+      // Boss (sprite) FIRST, bullets (group) SECOND: Phaser hands a sprite-vs-group
+      // overlap to the callback as (sprite, groupMember), so this yields (boss, bullet).
+      // The old (playerBullets, boss) order gave (boss, bullet) too but was read as
+      // (bullet, boss) — disabling the boss itself on the first hit.
+      this.physics.add.overlap(boss, this.playerBullets, (_boss, bullet) =>
+        this.bulletHitBoss(bullet as unknown as Bullet)
+      ),
       this.physics.add.overlap(this.player, boss, () => this.hurtPlayer())
     ]
     this.flash('WARNING: BOMBER')
@@ -650,7 +656,8 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private bulletHitBoss(bullet: Bullet) {
-    if (!bullet.active || !this.boss) return
+    // Never disable the boss itself if the overlap ever hands args in the wrong order.
+    if (!bullet.active || !this.boss || (bullet as unknown) === this.boss) return
     bullet.disableBody(true, true)
     this.shotsHit++
     this.bossHp--
